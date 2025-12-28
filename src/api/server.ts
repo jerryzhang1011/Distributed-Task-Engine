@@ -12,9 +12,11 @@ const queue = new QueueClient();
  * POST /api/enqueue
  * Submit a generic job to the queue
  * Body: { type: string, payload: any, maxRetries?: number }
+ * Headers: { 'idempotency-key': string } (Optional)
  */
 app.post('/api/enqueue', async (req: Request, res: Response) => {
   const { type, payload, maxRetries } = req.body;
+  const idempotencyKey = req.headers['idempotency-key'] as string;
 
   if (!type || payload === undefined) {
     res.status(400).json({ error: 'Missing required fields: type and payload' });
@@ -22,12 +24,13 @@ app.post('/api/enqueue', async (req: Request, res: Response) => {
   }
 
   try {
-    const job = await queue.enqueue(type, payload, { maxRetries });
+    const job = await queue.enqueue(type, payload, { maxRetries, idempotencyKey });
     res.status(201).json({
       success: true,
       jobId: job.id,
       type: job.type,
-      status: job.status
+      status: job.status,
+      idempotencyKey // Return key to confirm it was used
     });
   } catch (error: any) {
     console.error('[API] Enqueue error:', error);
@@ -39,9 +42,11 @@ app.post('/api/enqueue', async (req: Request, res: Response) => {
  * POST /api/webhook
  * Shortcut endpoint for submitting remote HTTP jobs
  * Body: { url: string, method?: string, headers?: object, body?: any, timeout?: number }
+ * Headers: { 'idempotency-key': string } (Optional)
  */
 app.post('/api/webhook', async (req: Request, res: Response) => {
   const { url, method = 'POST', headers, body, timeout } = req.body;
+  const idempotencyKey = req.headers['idempotency-key'] as string;
 
   if (!url) {
     res.status(400).json({ error: 'Missing required field: url' });
@@ -55,12 +60,14 @@ app.post('/api/webhook', async (req: Request, res: Response) => {
       headers,
       body,
       timeout
-    });
+    }, { idempotencyKey });
+    
     res.status(201).json({
       success: true,
       jobId: job.id,
       type: job.type,
-      status: job.status
+      status: job.status,
+      idempotencyKey
     });
   } catch (error: any) {
     console.error('[API] Webhook enqueue error:', error);
@@ -119,10 +126,9 @@ export function startServer(): void {
   app.listen(port, () => {
     console.log(`[API] Server listening on http://localhost:${port}`);
     console.log(`[API] Endpoints:`);
-    console.log(`  POST /api/enqueue - Submit a job`);
+    console.log(`  POST /api/enqueue - Submit a job (Supports Idempotency-Key)`);
     console.log(`  POST /api/webhook - Submit a remote HTTP job`);
     console.log(`  GET  /api/jobs/:id - Get job status`);
     console.log(`  GET  /api/stats - Get queue statistics`);
   });
 }
-

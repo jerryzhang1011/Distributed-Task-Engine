@@ -5,6 +5,7 @@ import { AppConfig } from '../config';
 
 export interface EnqueueOptions {
   maxRetries?: number;
+  idempotencyKey?: string;
 }
 
 export class QueueClient {
@@ -12,7 +13,9 @@ export class QueueClient {
   private readonly QUEUE_PREFIX = 'queue:';
 
   constructor(redisUrl: string = AppConfig.redisUrl) {
-    this.redis = new Redis(redisUrl);
+    this.redis = new Redis(redisUrl, {
+      maxRetriesPerRequest: null // Disable max retries limit for blocking commands
+    });
   }
 
   private getKey(key: string): string {
@@ -23,6 +26,19 @@ export class QueueClient {
    * Add a new job to the pending queue
    */
   async enqueue<T>(type: string, payload: T, options: EnqueueOptions = {}): Promise<Job<T>> {
+    // 1. Idempotency Check
+    if (options.idempotencyKey) {
+      const existingJobId = await this.redis.get(this.getKey(`idempotency:${options.idempotencyKey}`));
+      if (existingJobId) {
+        console.log(`[Queue] Idempotency hit: ${options.idempotencyKey} -> Job ${existingJobId}`);
+        const existingJob = await this.getJob(existingJobId);
+        if (existingJob) {
+          return existingJob as Job<T>;
+        }
+        // If key exists but job data is gone (e.g. expired), we proceed to create new job
+      }
+    }
+
     const job: Job<T> = {
       id: uuidv4(),
       type,
@@ -40,6 +56,11 @@ export class QueueClient {
     
     // Add job ID to pending queue (FIFO: push left, pop right)
     multi.lpush(this.getKey('pending'), job.id);
+
+    // Save Idempotency Key (Expire in 24h)
+    if (options.idempotencyKey) {
+      multi.set(this.getKey(`idempotency:${options.idempotencyKey}`), job.id, 'EX', 86400);
+    }
 
     await multi.exec();
     return job;
@@ -181,4 +202,3 @@ export class QueueClient {
     await this.redis.quit();
   }
 }
-

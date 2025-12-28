@@ -5,6 +5,7 @@ A robust, distributed job queue system built with **Node.js** and **Redis**. Des
 ## 🚀 Features
 
 - **Reliable Queuing**: Uses Redis `BRPOPLPUSH` for atomic moves, ensuring zero job loss even if workers crash.
+- **Idempotency Support**: Prevents duplicate job processing using `Idempotency-Key` headers (deduplication window: 24h).
 - **Smart Retries**: Automatic retries with **Exponential Backoff** (1s, 2s, 4s...) for transient failures.
 - **Dead Letter Queue (DLQ)**: Failed jobs are moved to a separate queue after max retries.
 - **Plug & Play Handlers**: Simply drop a `.ts` file into `src/handlers/` to create a new job type.
@@ -64,9 +65,12 @@ export default async function imageResize(job: Job) {
 
 ### 2. Submit a Job via API
 
+Support for idempotency: send `Idempotency-Key` header to prevent duplicate jobs.
+
 ```bash
 curl -X POST http://localhost:3000/api/enqueue \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: unique-req-id-123" \
   -d '{
     "type": "imageResize",
     "payload": {
@@ -82,6 +86,7 @@ No code needed! Just call the webhook endpoint:
 ```bash
 curl -X POST http://localhost:3000/api/webhook \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: webhook-req-abc" \
   -d '{
     "url": "https://httpbin.org/post",
     "method": "POST",
