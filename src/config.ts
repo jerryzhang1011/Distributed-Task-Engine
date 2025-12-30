@@ -19,6 +19,13 @@ export const AppConfig = {
   defaultMaxRetries: 3,
 
   // Backoff multiplier in milliseconds (exponential: 1s, 2s, 4s...)
-  backoffMultiplierMs: 1000
+  backoffMultiplierMs: 1000,
+
+  // Worker concurrency: max number of jobs processed simultaneously per worker instance
+  // Increase for I/O-bound tasks (HTTP, email), decrease for CPU-bound tasks
+  workerConcurrency: parseInt(process.env.WORKER_CONCURRENCY || '20', 10),
+
+  // Polling interval when queue is empty (ms)
+  pollingIntervalMs: 100
 };
 
